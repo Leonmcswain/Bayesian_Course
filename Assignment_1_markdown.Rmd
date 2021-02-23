@@ -1,0 +1,170 @@
+---
+title: "Homework 1"
+author: "Leon McSwain"
+date: "2/20/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(R2jags)
+HIV <- read.csv("C:/Users/12298/Desktop/BIOS560R/Assignment_One/HIV.csv") %>% as.data.frame()
+```
+
+
+Poisson and Exponential Analysis
+```{r}
+jags.model1 <- function(){
+#Dist for data likelyhood
+#looping through vector of case numbers for data likelyhood
+  for (i in 1:N0) {
+    C0[i] ~ dpois(lambda0)
+    } #No Intervention
+  for (i in 1:N1) {
+    C1[i] ~ dpois(lambda1)
+    } #Intervention
+  
+#Priors for mean cases - using exponential conjugate prior for fewest assumptions about case means - using 1/mean of all cases as the lambda for exp distribution
+  lambda0 ~ dexp(P0) #Fewest assumptions with only one parameter
+  lambda1 ~ dexp(P0) 
+  
+#Parameter to save - difference in mean case numbers as measure of risk reduction
+  Risk=lambda0-lambda1
+  
+}
+
+#Variables
+C0 <- as.numeric((HIV$cases[HIV$status==0])) #Vector of non-treatment group
+C1 <- as.numeric((HIV$cases[HIV$status==1])) #Vector of treatment group
+N0 <- sum(HIV$status==0) #total cases for non-treatment group
+N1 <- sum(HIV$status==1) #total cases for treatment group
+P0=1/mean(HIV$cases) 
+
+```
+
+
+Running the Jags model. Saving lambda distributions (posterior means) and Risk parameter
+```{r}
+jags.dat=list(C0=C0, C1=C1, N0 = N0, N1 = N1, P0=P0)
+
+fit = jags (data = jags.dat, model.file = jags.model1, parameters.to.save = c("Risk", "lambda0", "lambda1"), n.chain = 1, n.iter = 51000, n.burnin = 1000, n.thin = 1)
+fit.mcmc <- as.mcmc(fit)
+
+summary (fit.mcmc)
+```
+
+Analysis of posterior distribution results
+```{r}
+#Point and Interval Estimates
+median(as.matrix(fit.mcmc[,4]))
+HPDI <- HPDinterval(fit.mcmc[,4], credMass=0.89)
+
+#Histograms of parameters and risk
+#Non-treatment Group Posterior
+hist(as.matrix(fit.mcmc[,2]), main="Non-intervention Group Posterior", xlab="Posterior Mean")
+abline(v=mean(as.matrix(fit.mcmc[,2])))
+
+#Treatment Group Posterior with Highest Posterior Density Interval
+hist(as.matrix(fit.mcmc[,3]), main="Intervention Group Posterior", xlab="Posterior Mean") 
+abline(v=mean(as.matrix(fit.mcmc[,3])))
+
+#Risk Posterior 
+hist(as.matrix(fit.mcmc[,4]), main="Risk Reduction", xlab="Mean Difference") #The risk = lambda1-Lambda0
+abline(v=c(HPDI[[c(1,1)]], mean(as.matrix(fit.mcmc[,4])), HPDI[[c(1,2)]]), col=c("blue", "red", "blue"))
+
+#Showing the percent difference between the two parameters to show the magnitude of the difference.
+hist(((rate_prop - 1)*100), main="Percent Risk Difference Between Groups", xlab="Percent of Mean Proportion")
+abline(v=c(mean(rate_prop-1)*100))
+
+# Posterior probability that control > treatment
+sum(rate_prop > 1) /length(rate_prop)
+
+
+```
+
+
+
+Negative Binomial and Beta Analysis
+Important questions: 
+Would the number of failures before success be represented as a minimum difference in the mean case number? 
+###########################################################################################################################
+```{r}
+jags.model1 <- function(){
+#Dist for data likelihood
+#looping through vector of case numbers for data likelihood
+  for (i in 1:N0) {
+    C0[i] ~ dnegbin(p0, r0)
+    } #No Intervention
+  for (i in 1:N1) {
+    C1[i] ~ dnegbin(p1, r1)
+    } #Intervention
+  
+#Re-paramaterizing in terms of mean
+  p0 <- r0/(r0+m0)
+  p1 <- r1/(r1+m1)
+  
+#Priors for mean cases (probability parameter)
+  m0 ~ dexp(P0)
+  m1 ~ dexp(P0)
+  
+#Priors for variance - Dispersion parameter
+  r0 ~ dexp(1)
+  r1 ~ dexp(1)
+  
+#Parameter to save - difference in mean case numbers as measure of risk reduction
+  Risk=m0-m1
+  
+  var0 = r0*(1-p0)/(p0*p0)
+  var1 = r1*(1-p1)/(p1*p1)
+  
+}
+
+#Variables
+C0 <- as.numeric((HIV$cases[HIV$status==0])) #Vector of non-treatment group
+C1 <- as.numeric((HIV$cases[HIV$status==1])) #Vector of treatment group
+N0 <- sum(HIV$status==0) #total cases for non-treatment group
+N1 <- sum(HIV$status==1) #total cases for treatment group
+P0=1/mean(HIV$cases) 
+
+```
+
+
+Running the Jags model. Saving lambda distributions (posterior means) and Risk parameter
+```{r}
+jags.dat=list(C0=C0, C1=C1, N0 = N0, N1 = N1, P0=P0)
+
+fit = jags (data = jags.dat, model.file = jags.model1, parameters.to.save = c("Risk", "m0", "m1", "var1", "var0"), n.chain = 1, n.iter = 51000, n.burnin = 1000, n.thin = 1)
+fit.mcmc <- as.mcmc(fit)
+
+summary (fit.mcmc)
+```
+
+```{r}
+#Point and Interval Estimates
+median(as.matrix(fit.mcmc[,4]))
+HPDI <- HPDinterval(fit.mcmc[,4], credMass=0.89)
+
+#Histograms of parameters and risk
+#Non-treatment Group Posterior
+hist(as.matrix(fit.mcmc[,2]), main="Non-intervention Group Posterior", xlab="Posterior Mean")
+abline(v=mean(as.matrix(fit.mcmc[,2])))
+
+#Treatment Group Posterior with Highest Posterior Density Interval
+hist(as.matrix(fit.mcmc[,3]), main="Intervention Group Posterior", xlab="Posterior Mean") 
+abline(v=mean(as.matrix(fit.mcmc[,3])))
+
+#Risk Posterior 
+hist(as.matrix(fit.mcmc[,4]), main="Risk Reduction", xlab="Mean Difference") 
+abline(v=c(HPDI[[c(1,1)]], mean(as.matrix(fit.mcmc[,4])), HPDI[[c(1,2)]]), col=c("blue", "red", "blue"))
+
+#Showing the percent difference between the two parameters to show the magnitude of the difference.
+rate_prop <- as.matrix(fit.mcmc[,2])/as.matrix(fit.mcmc[,3])
+hist(((rate_prop - 1)*100), main="Percent Risk Difference Between Groups", xlab="Percent of Mean Proportion")
+abline(v=c(mean(rate_prop-1)*100))
+
+# Posterior probability that control > treatment
+sum(rate_prop > 1) /length(rate_prop)
+
+
+```
+
+
